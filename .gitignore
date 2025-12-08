@@ -1,0 +1,11 @@
+# Large binary files that exceed GitHub's 100MB limit
+offline-files.tar.gz
+
+# Temporary files
+*.tmp
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
