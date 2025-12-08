@@ -1,0 +1,160 @@
+---
+# =============================================================================
+# 통합 커스텀 설정 파일
+# 이 파일은 여러 파일에 분산된 커스텀 설정을 하나로 모아 관리합니다.
+# =============================================================================
+
+# =============================================================================
+# Kubernetes Cluster 기본 설정
+# =============================================================================
+
+# 클러스터 설치를 소유하는 사용자
+# Kubernetes 관련 파일과 디렉토리의 소유권을 설정합니다.
+# 기본값: kube
+kube_owner: root
+
+# 네트워크 플러그인 선택
+# 사용 가능한 옵션:
+#   - 'cilium': Cilium CNI 플러그인 (eBPF 기반)
+#   - 'calico': Calico 네트워크 정책 및 라우팅
+#   - 'kube-ovn': Kube-OVN 가상 네트워크
+#   - 'flannel': Flannel 오버레이 네트워크
+#   - 'cni': 일반 CNI 플러그인 (커스텀 CNI 사용 시)
+#   - 'cloud': 클라우드 프로바이더가 라우팅을 자동 설정
+# 기본값: calico
+kube_network_plugin: 'cni'
+
+# Kubernetes 서비스용 내부 네트워크 CIDR
+# ClusterIP 타입의 서비스에 할당되는 가상 IP 주소 범위입니다.
+# 이 네트워크는 실제 물리 네트워크와 겹치지 않아야 하며,
+# kube_pods_subnet과도 겹치지 않아야 합니다.
+# /18 서브넷은 약 16,384개의 서비스 IP를 제공합니다.
+# 범위: 10.201.0.0 ~ 10.201.63.255
+# 기본값: 10.233.0.0/18
+kube_service_addresses: 10.201.0.0/18
+
+# Kube-proxy 프록시 모드 설정 (현재 사용하지 않음)
+# kube-proxy를 배포하지 않으므로 주석 처리되어 있습니다.
+# 사용 가능한 옵션:
+#   - 'ipvs': IP Virtual Server (고성능, 많은 규칙 지원)
+#   - 'iptables': iptables 기반 (기본값, 널리 사용됨)
+#   - 'nftables': nftables 기반 (향후 기본값 예정)
+# kube_proxy_mode: iptables
+
+# kube-proxy 배포 스킵 설정
+# true로 설정하면 kubeadm init 시 'addon/kube-proxy' phase가 스킵되어
+# kube-proxy가 배포되지 않습니다.
+# 
+# 사용 사례:
+#   - Cilium의 kube-proxy replacement 기능 사용 시
+#   - Calico의 eBPF 모드 사용 시
+#   - Kube-router와 같은 대체 솔루션 사용 시
+# 
+# 주의: kube-proxy 없이는 Service의 ClusterIP 기능이 작동하지 않으므로,
+#       반드시 대체 솔루션(Cilium 등)을 배포해야 합니다.
+kube_proxy_remove: true
+
+# =============================================================================
+# Kubernetes Addons 설정
+# =============================================================================
+
+# Helm 패키지 매니저 배포 활성화
+# Helm은 Kubernetes용 패키지 매니저로, 차트를 통해 애플리케이션을
+# 쉽게 설치하고 관리할 수 있게 해줍니다.
+# true로 설정하면 클러스터에 Helm이 자동으로 설치됩니다.
+helm_enabled: true
+
+# Metrics Server 배포 활성화
+# Metrics Server는 Kubernetes의 리소스 사용량 메트릭을 수집하는
+# 핵심 컴포넌트입니다. kubectl top 명령어와 HPA(Horizontal Pod Autoscaler)가
+# 작동하려면 반드시 필요합니다.
+# true로 설정하면 클러스터에 Metrics Server가 자동으로 설치됩니다.
+metrics_server_enabled: true
+
+# cert-manager 배포 활성화
+# cert-manager는 Kubernetes에서 TLS 인증서를 자동으로 발급, 갱신, 관리하는
+# 도구입니다. Let's Encrypt 등 ACME 프로토콜을 지원하며,
+# Certificate 리소스를 통해 인증서를 자동으로 관리할 수 있습니다.
+# true로 설정하면 클러스터에 cert-manager가 자동으로 설치됩니다.
+cert_manager_enabled: true
+
+# =============================================================================
+# Offline 환경 설정 (오프라인 배포용)
+# =============================================================================
+
+# 오프라인 파일 서버 기본 URL
+# 인터넷에 연결되지 않은 환경에서 Kubernetes 바이너리와 이미지를
+# 다운로드할 수 있는 로컬 파일 서버의 주소입니다.
+# 이 서버는 미리 다운로드한 바이너리 파일들을 호스팅해야 합니다.
+files_repo: "http://192.168.108.201:8080"
+
+# =============================================================================
+# 바이너리 다운로드 URL 오버라이드 (Option 1: 권장 방식)
+# =============================================================================
+# 파일 서버가 원본 URL 경로 구조를 그대로 유지하는 경우,
+# 아래와 같이 기본 URL만 변경하면 모든 바이너리 다운로드가
+# 자동으로 로컬 서버로 리다이렉트됩니다.
+# 
+# 예: github.com/kubernetes/kubernetes/releases/... 
+#   -> http://192.168.108.201:8080/github.com/kubernetes/kubernetes/releases/...
+
+# GitHub 바이너리 다운로드 URL
+# Kubernetes, etcd, CNI 플러그인 등 GitHub에서 호스팅되는 바이너리
+github_url: "{{ files_repo }}/github.com"
+
+# Kubernetes 공식 바이너리 다운로드 URL
+# kubeadm, kubectl, kubelet 등 Kubernetes 공식 바이너리
+dl_k8s_io_url: "{{ files_repo }}/dl.k8s.io"
+
+# Google Cloud Storage 바이너리 다운로드 URL
+# gVisor, cri-o 등 Google Cloud Storage에서 호스팅되는 바이너리
+storage_googleapis_url: "{{ files_repo }}/storage.googleapis.com"
+
+# Helm 설치 스크립트 다운로드 URL
+# Helm 바이너리 다운로드 URL
+get_helm_url: "{{ files_repo }}/get.helm.sh"
+
+# =============================================================================
+# Containerd 레지스트리 미러 설정
+# =============================================================================
+# 오프라인 환경에서 컨테이너 이미지를 가져오기 위한 레지스트리 미러 설정입니다.
+# containerd는 이미지 풀 요청 시 원본 레지스트리 대신 미러 레지스트리를 사용합니다.
+#
+# 설정 구조:
+#   - prefix: 원본 레지스트리 도메인 (예: docker.io, quay.io)
+#   - mirrors: 미러 레지스트리 목록 (우선순위 순서대로)
+#   - capabilities: 허용할 작업 (pull: 이미지 다운로드, resolve: 이미지 해석)
+#   - skip_verify: TLS 인증서 검증 건너뛰기 (오프라인 환경에서 자체 서명 인증서 사용 시)
+containerd_registries_mirrors:
+  # Docker Hub (docker.io) 미러 설정
+  # 예: docker pull nginx -> repo.kubespray.miribit.lab:5000에서 다운로드
+  - prefix: docker.io
+    mirrors:
+      - host: http://repo.kubespray.miribit.lab:5000
+        capabilities: ["pull", "resolve"]  # 이미지 다운로드 및 해석 허용
+        skip_verify: true  # TLS 인증서 검증 건너뛰기
+
+  # Quay.io 미러 설정
+  # Red Hat, CoreOS 등에서 호스팅하는 이미지 레지스트리
+  - prefix: quay.io
+    mirrors:
+      - host: http://repo.kubespray.miribit.lab:5001
+        capabilities: ["pull", "resolve"]
+        skip_verify: true
+
+  # GitHub Container Registry (ghcr.io) 미러 설정
+  # GitHub에서 호스팅하는 컨테이너 이미지 레지스트리
+  - prefix: ghcr.io
+    mirrors:
+      - host: http://repo.kubespray.miribit.lab:5002
+        capabilities: ["pull", "resolve"]
+        skip_verify: true
+
+  # Kubernetes 공식 레지스트리 (registry.k8s.io) 미러 설정
+  # Kubernetes 공식 컨테이너 이미지 (kube-apiserver, kube-controller-manager 등)
+  - prefix: registry.k8s.io
+    mirrors:
+      - host: http://repo.kubespray.miribit.lab:5003
+        capabilities: ["pull", "resolve"]
+        skip_verify: true
+

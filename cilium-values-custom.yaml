@@ -1,0 +1,367 @@
+# Cilium Helm Chart Custom Values File
+# 이 파일은 기본 values.yaml에서 수정된 설정들을 정리한 파일입니다.
+# 각 설정에 대한 설명과 향후 Prometheus CRD 설정 가이드가 포함되어 있습니다.
+
+# ==============================================================================
+# Kubernetes API Server 설정
+# ==============================================================================
+# Kubernetes API 서버 연결 설정
+# 로컬 호스트를 통해 API 서버에 연결하도록 설정
+k8sServiceHost: "127.0.0.1"
+k8sServicePort: "6443"
+
+# ==============================================================================
+# Kubernetes API Rate Limiting 설정
+# ==============================================================================
+# Cilium Agent와 Operator가 Kubernetes API 서버에 요청할 때의 속도 제한 설정
+# 대규모 클러스터나 높은 트래픽 환경에서 API 서버 부하를 관리하기 위해 설정
+k8sClientRateLimit:
+  # Agent의 지속 요청 속도 (초당 요청 수)
+  # 기본값: 10, 현재 설정: 40 (4배 증가)
+  qps: 40
+  # Agent의 버스트 요청 속도 (단기간 최대 요청 수)
+  # 기본값: 20, 현재 설정: 80 (4배 증가)
+  burst: 80
+  # Operator의 Rate Limiting 설정
+  operator:
+    # Operator의 지속 요청 속도 (초당 요청 수)
+    # 기본값: 100, 현재 설정: 400 (4배 증가)
+    qps: 400
+    # Operator의 버스트 요청 속도 (단기간 최대 요청 수)
+    # 기본값: 200, 현재 설정: 800 (4배 증가)
+    burst: 800
+
+# ==============================================================================
+# 네트워크 라우팅 설정
+# ==============================================================================
+# Worker 노드 간 PodCIDR 라우팅 설정
+# Worker 노드들이 공통 L2 네트워크 세그먼트를 공유하는 경우
+# PodCIDR 라우트를 자동으로 설치
+autoDirectNodeRoutes: true
+
+# Worker 노드들이 다른 L2 네트워크 세그먼트에 있는 경우
+# 도달할 수 없는 라우트 생성을 건너뛰도록 설정
+# 이 옵션은 autoDirectNodeRoutes가 활성화된 경우에만 효과가 있습니다
+directRoutingSkipUnreachable: true
+
+# ==============================================================================
+# BGP Control Plane 설정
+# ==============================================================================
+# BGP를 통한 LoadBalancer IP 광고 기능
+# L3 네트워크에서 LoadBalancer 서비스 IP를 BGP로 광고하여
+# 외부 라우터가 해당 IP로 트래픽을 라우팅할 수 있도록 함
+bgpControlPlane:
+  # BGP Control Plane 활성화
+  enabled: true
+  # BGP Router ID 할당 모드
+  routerIDAllocation:
+    # "default": IPv4 주소 또는 MAC 주소에서 자동으로 Router ID 생성
+    # "ip-pool": 지정된 IP 풀에서 Router ID 할당 (더 안정적)
+    mode: "default"
+    # ip-pool 모드 사용 시 IP 풀 범위 지정
+    ipPool: ""
+
+# ==============================================================================
+# Datapath 모드 설정
+# ==============================================================================
+# Pod 네트워크 인터페이스 타입 선택
+bpf:
+  # datapathMode 옵션:
+  # - veth: 전통적인 Linux 가상 이더넷 페어, L2 모드, TC를 통한 BPF
+  # - netkit: Linux 6.7+에서 도입된 새로운 가상 디바이스, L3 모드, 네이티브 BPF
+  #           네임스페이스 전환 최적화, 성능 향상, 권장됨
+  # - netkit-l2: netkit의 L2 모드, 특정 L2 프로토콜 요구사항이 있는 경우 사용
+  datapathMode: netkit
+
+# ==============================================================================
+# Ingress Controller 설정
+# ==============================================================================
+# Cilium Ingress Controller는 외부 트래픽을 클러스터 내부 서비스로 라우팅
+ingressController:
+  # Ingress Controller 활성화
+  enabled: true
+  # 기본 Ingress Controller로 설정
+  # Ingress 리소스에 ingressClassName이 지정되지 않은 경우에도 처리
+  default: true
+  # LoadBalancer 모드 설정
+  # - shared: 모든 Ingress 리소스가 하나의 공유 LoadBalancer 사용 (비용 효율적)
+  # - dedicated: 각 Ingress 리소스마다 전용 LoadBalancer 사용 (격리)
+  loadbalancerMode: shared
+
+# ==============================================================================
+# Socket-Based Load Balancing 설정
+# ==============================================================================
+# 소켓 기반 로드 밸런싱은 connect() 호출을 가로채서
+# Service IP를 백엔드 Pod IP로 직접 해석하여 성능을 최적화
+socketLB:
+  # Socket LB 활성화
+  enabled: true
+  # 비루트 네임스페이스에서 Socket LB 비활성화
+  # Istio 라우팅 규칙과 함께 사용할 경우 true로 설정
+  hostNamespaceOnly: false
+  # 삭제된 서비스 백엔드에 대한 Pod 연결 종료
+  # 백엔드가 삭제될 때 기존 연결을 정리하여 안정성 향상
+  terminatePodConnections: true
+  # Socket 기반 로드 밸런싱 추적 활성화
+  # 개발/디버깅 목적으로만 사용, 프로덕션에서는 false 권장
+  tracing: false
+
+# ==============================================================================
+# Hubble 설정
+# ==============================================================================
+# Hubble은 Cilium의 네트워크 관찰성 도구로 네트워크 플로우를 모니터링
+hubble:
+  # Hubble 활성화
+  enabled: true
+
+  # Hubble 메트릭 설정
+  metrics:
+    # 수집할 메트릭 목록
+    enabled:
+      - dns                    # DNS 쿼리 메트릭
+      - drop                    # 드롭된 패킷 메트릭
+      - tcp                     # TCP 연결 메트릭
+      - flow                    # 네트워크 플로우 메트릭
+      - port-distribution       # 포트 분포 메트릭
+      - icmp                    # ICMP 메트릭
+      - 'httpV2:exemplars=true;labelsContext=source_ip,source_namespace,source_workload,destination_ip,destination_namespace,destination_workload,traffic_direction'
+    # OpenMetrics 형식으로 메트릭 내보내기 활성화
+    # Prometheus와 호환되는 형식
+    enableOpenMetrics: true
+    # 메트릭 서버 포트
+    port: 996
+
+    # ServiceMonitor 설정 (Prometheus Operator 사용 시)
+    # 현재는 CRD가 없어서 비활성화 상태
+    # 향후 Prometheus Operator 설치 후 활성화 필요
+    serviceMonitor:
+      enabled: false
+      # 활성화 시 설정 예시:
+      # enabled: true
+      # interval: "10s"
+      # labels:
+      #   app: cilium
+      #   component: hubble-metrics
+
+  # Hubble Relay 설정
+  # Hubble Relay는 여러 노드의 Hubble 인스턴스에서 메트릭을 집계
+  relay:
+    enabled: true
+    # ConfigMap 업데이트 시 자동으로 Pod 재시작
+    rollOutPods: true
+
+    # Prometheus 메트릭 설정
+    prometheus:
+      enabled: true
+      port: 9966
+      # ServiceMonitor 설정 (Prometheus Operator 사용 시)
+      serviceMonitor:
+        enabled: false
+        # 활성화 시 설정 예시:
+        # enabled: true
+        # interval: "10s"
+
+  # Hubble UI 설정
+  ui:
+    # ConfigMap 업데이트 시 자동으로 Pod 재시작
+    rollOutPods: true
+    # 서비스 설정
+    service:
+      # NodePort 타입으로 외부 접근 가능하도록 설정
+      type: NodePort
+      # NodePort 포트 번호
+      nodePort: 31235
+    # Ingress 설정
+    ingress:
+      enabled: true
+      # Ingress 클래스 이름 (Cilium Ingress Controller 사용)
+      className: "cilium"
+      hosts:
+        - hubble-ui.cilium.io
+
+# ==============================================================================
+# IP Address Management (IPAM) 설정
+# ==============================================================================
+# Pod에 IP 주소를 할당하는 방식 설정
+ipam:
+  # IPAM 모드: cluster-pool
+  # 클러스터 전체에서 사용할 IP 풀을 지정하고
+  # 각 노드에 서브넷을 할당하는 방식
+  mode: "cluster-pool"
+  operator:
+    # IPv4 Pod CIDR 리스트
+    # 각 노드에 할당될 IP 범위의 상위 CIDR
+    clusterPoolIPv4PodCIDRList: ["10.200.0.0/16"]
+    # 각 노드에 할당될 IPv4 서브넷 마스크 크기
+    # /24 = 256개 IP 주소 (254개 사용 가능, .0과 .255 제외)
+    clusterPoolIPv4MaskSize: 24
+
+# ==============================================================================
+# Kube Proxy Replacement 설정
+# ==============================================================================
+# Cilium이 kube-proxy를 대체하여 서비스 프록시 기능을 수행
+# BPF 기반으로 더 효율적인 성능 제공
+kubeProxyReplacement: "true"
+
+# ==============================================================================
+# Native Routing 설정
+# ==============================================================================
+# 네이티브 라우팅 모드에서 사용할 IPv4 CIDR 범위 지정
+# 이 CIDR 범위의 트래픽은 SNAT 없이 Linux 네트워크 스택으로 직접 전달
+# 기본 네트워크가 이 CIDR에 대한 라우팅을 사전 구성했다고 가정
+ipv4NativeRoutingCIDR: "10.200.0.0/16"
+
+# ==============================================================================
+# Load Balancer 설정
+# ==============================================================================
+# 서비스 로드 밸런싱 설정
+loadBalancer:
+  # 로드 밸런싱 알고리즘
+  # - random: 랜덤 선택
+  # - maglev: Maglev 해싱 알고리즘 (일관성 있는 해싱, 권장)
+  algorithm: maglev
+
+  # 원격 백엔드에 대한 로드 밸런싱 모드
+  # - snat: Source NAT 모드 (기본)
+  # - dsr: Direct Server Return 모드 (성능 최적화)
+  # - hybrid: 로컬 백엔드는 DSR, 원격 백엔드는 SNAT (권장)
+  mode: hybrid
+
+  # XDP 가속화 설정
+  # - disabled: XDP 사용 안 함
+  # - native: 네이티브 XDP 모드 (최고 성능, 드라이버 지원 필요)
+  # - best-effort: 지원되는 디바이스에서만 네이티브 XDP 사용 (권장)
+  acceleration: best-effort
+  # 최고 성능이 필요한 경우 native 사용 고려:
+  # acceleration: native
+
+  # L7 Load Balancer 설정
+  # 클러스터 내부 서비스 간 L7 로드 밸런싱 (HTTP/HTTPS)
+  l7:
+    # L7 백엔드: envoy 사용
+    # Envoy 프록시를 통해 L7 로드 밸런싱 수행
+    backend: envoy
+    # 자동으로 리다이렉트할 포트 목록
+    # 빈 배열이면 서비스 어노테이션으로 제어
+    ports: []
+    # 기본 로드 밸런싱 알고리즘
+    algorithm: round_robin
+
+# ==============================================================================
+# Routing Mode 설정
+# ==============================================================================
+# 네트워크 라우팅 모드 선택
+# - tunnel: VXLAN/Geneve 터널링 모드 (기본)
+# - native: 네이티브 라우팅 모드 (더 나은 성능, 네트워크 사전 구성 필요)
+routingMode: "native"
+
+# ==============================================================================
+# Prometheus 메트릭 설정
+# ==============================================================================
+# Cilium Agent Prometheus 메트릭
+prometheus:
+  # 메트릭 서비스 생성
+  metricsService: true
+  # Prometheus 메트릭 활성화
+  enabled: true
+  # 메트릭 서버 포트
+  port: 9962
+
+  # ServiceMonitor 설정 (Prometheus Operator 사용 시)
+  # 현재는 Prometheus CRD가 없어서 비활성화 상태
+  # 향후 Prometheus Operator 설치 후 활성화 필요
+  serviceMonitor:
+    enabled: false
+    # 활성화 시 설정 예시:
+    # enabled: true
+    # interval: "10s"
+    # labels:
+    #   app: cilium
+    #   component: agent
+    # relabelings:
+    #   - sourceLabels:
+    #       - __meta_kubernetes_pod_node_name
+    #     targetLabel: node
+    #     action: replace
+
+# Cilium Operator Prometheus 메트릭
+operator:
+  prometheus:
+    # 메트릭 서비스 생성
+    metricsService: true
+    # Prometheus 메트릭 활성화
+    enabled: true
+    # 메트릭 서버 포트
+    port: 9963
+
+    # ServiceMonitor 설정 (Prometheus Operator 사용 시)
+    serviceMonitor:
+      enabled: false
+      # 활성화 시 설정 예시:
+      # enabled: true
+      # interval: "10s"
+      # labels:
+      #   app: cilium
+      #   component: operator
+
+# ==============================================================================
+# 향후 Prometheus CRD 설정 가이드
+# ==============================================================================
+#
+# Prometheus Operator를 설치한 후 다음 설정들을 활성화해야 합니다:
+#
+# 1. Prometheus CRD 설치 확인:
+#    kubectl get crd servicemonitors.monitoring.coreos.com
+#
+# 2. Cilium Agent ServiceMonitor 활성화:
+#    prometheus.serviceMonitor.enabled: true
+#
+# 3. Cilium Operator ServiceMonitor 활성화:
+#    operator.prometheus.serviceMonitor.enabled: true
+#
+# 4. Hubble Metrics ServiceMonitor 활성화:
+#    hubble.metrics.serviceMonitor.enabled: true
+#
+# 5. Hubble Relay Prometheus ServiceMonitor 활성화:
+#    hubble.relay.prometheus.serviceMonitor.enabled: true
+#
+# 6. Envoy ServiceMonitor 활성화 (L7 LB 사용 시):
+#    envoy.prometheus.serviceMonitor.enabled: true
+#
+# 현재 설정에서는 Prometheus가 Service의 prometheus.io/scrape 어노테이션을
+# 통해 메트릭을 수집할 수 있습니다. ServiceMonitor를 활성화하면 더 세밀한
+# 제어가 가능합니다.
+#
+# ==============================================================================
+# 주요 변경 사항 요약
+# ==============================================================================
+#
+# 1. 성능 최적화:
+#    - datapathMode: netkit (Linux 6.7+)
+#    - socketLB 활성화
+#    - loadBalancer 모드: hybrid
+#    - loadBalancer 가속화: best-effort
+#    - routingMode: native
+#
+# 2. 네트워크 설정:
+#    - IPAM: cluster-pool 모드
+#    - Pod CIDR: 10.200.0.0/16
+#    - Native Routing CIDR: 10.200.0.0/16
+#    - BGP Control Plane 활성화
+#
+# 3. 관찰성:
+#    - Hubble 활성화 (메트릭, Relay, UI)
+#    - Prometheus 메트릭 활성화 (Agent, Operator)
+#    - OpenMetrics 형식 활성화
+#
+# 4. Ingress:
+#    - Cilium Ingress Controller 활성화
+#    - 기본 Ingress Controller로 설정
+#    - Shared LoadBalancer 모드
+#
+# 5. API Rate Limiting:
+#    - Agent: qps=40, burst=80 (기본값의 4배)
+#    - Operator: qps=400, burst=800 (기본값의 4배)
+#
+# ==============================================================================
+

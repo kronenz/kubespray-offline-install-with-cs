@@ -1,0 +1,307 @@
+---
+# =============================================================================
+# Kubespray 오프라인 환경 사전 설정 Playbook
+# =============================================================================
+# 사용법:
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml
+#
+# 또는 변수 오버라이드:
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml \
+#     -e "repo_server_ip=192.168.108.201" \
+#     -e "repo_server_hostname=repo.kubespray.miribit.lab"
+#
+# 특정 Play만 실행:
+#   --tags download    : 패키지 다운로드만
+#   --tags packages    : 패키지 전송/설치만
+#   --tags dns         : DNS 설정만
+#   --tags hosts       : /etc/hosts 설정만
+#   --tags swap        : swap 비활성화만
+#   --tags verify      : 검증만
+#
+# 개별 Play 실행 예제:
+#   # 패키지 다운로드만
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml --tags download
+#
+#   # 패키지 전송/설치만
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml --tags packages
+#
+#   # DNS 설정만
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml --tags dns
+#
+#   # /etc/hosts 설정만
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml --tags hosts
+#
+#   # Swap 비활성화만
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml --tags swap
+#
+#   # 검증만
+#   ansible-playbook -i inventory/offline-test/inventory.ini offline-pre-setup.yml --tags verify
+# =============================================================================
+
+# =============================================================================
+# Play 1: 패키지 다운로드 (Ansible 컨트롤러 - 온라인 환경)
+# =============================================================================
+- name: "[Play 1] Download packages on Ansible controller"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    package_src_dir: "/tmp/offline-rpms"
+    required_packages:
+    - conntrack-tools
+    - ipvsadm
+    - socat
+
+  tasks:
+  - name: "[DOWNLOAD] Create package directory on Ansible controller"
+    file:
+      path: "{{ package_src_dir }}"
+      state: directory
+      mode: '0755'
+    tags:
+    - download
+
+  - name: "[DOWNLOAD] Download required RPM packages with dependencies"
+    shell: |
+      cd {{ package_src_dir }}
+      dnf download --resolve {{ required_packages | join(' ') }}
+    args:
+      creates: "{{ package_src_dir }}/*.rpm"
+    register: download_result
+    tags:
+    - download
+
+  - name: "[DOWNLOAD] List downloaded packages"
+    shell: "ls -la {{ package_src_dir }}/"
+    register: package_list
+    changed_when: false
+    tags:
+    - download
+
+  - name: "[DOWNLOAD] Display downloaded packages"
+    debug:
+      msg: "{{ package_list.stdout_lines }}"
+    tags:
+    - download
+
+# =============================================================================
+# Play 2: 패키지 전송 및 설치 (대상 노드)
+# =============================================================================
+- name: "[Play 2] Install packages on target nodes"
+  hosts: all
+  become: true
+
+  vars:
+    package_src_dir: "/tmp/offline-rpms"
+    package_dest_dir: "/tmp/offline-rpms"
+    required_packages:
+    - conntrack-tools
+    - ipvsadm
+    - socat
+
+  tasks:
+  - name: "[PACKAGES] Create package directory"
+    file:
+      path: "{{ package_dest_dir }}"
+      state: directory
+      mode: '0755'
+    tags:
+    - packages
+
+  - name: "[PACKAGES] Copy RPM packages to nodes"
+    copy:
+      src: "{{ package_src_dir }}/"
+      dest: "{{ package_dest_dir }}/"
+    tags:
+    - packages
+    ignore_errors: yes
+
+  - name: "[PACKAGES] Install required packages from local RPMs"
+    ansible.builtin.shell: |
+      dnf install -y {{ package_dest_dir }}/*.rpm
+    register: rpm_install
+    failed_when: false
+    changed_when: rpm_install.rc == 0
+    tags:
+    - packages
+
+  - name: "[PACKAGES] Verify required packages are installed"
+    package:
+      name: "{{ item }}"
+      state: present
+    loop: "{{ required_packages }}"
+    ignore_errors: yes
+    tags:
+    - packages
+    - verify
+
+# =============================================================================
+# Play 3: DNS 설정 (대상 노드)
+# =============================================================================
+- name: "[Play 3] Configure DNS on target nodes"
+  hosts: all
+  become: true
+
+  vars:
+    fallback_nameserver: "127.0.0.1"
+
+  tasks:
+  - name: "[DNS] Ensure nameserver is configured in /etc/resolv.conf"
+    lineinfile:
+      path: /etc/resolv.conf
+      line: "nameserver {{ fallback_nameserver }}"
+      create: yes
+      state: present
+    tags:
+    - dns
+
+  - name: "[DNS] Verify /etc/resolv.conf"
+    shell: cat /etc/resolv.conf
+    register: resolv_conf
+    changed_when: false
+    tags:
+    - dns
+    - verify
+
+  - name: "[DNS] Display /etc/resolv.conf"
+    debug:
+      msg: "{{ resolv_conf.stdout_lines }}"
+    tags:
+    - dns
+    - verify
+
+# =============================================================================
+# Play 4: /etc/hosts 설정 (대상 노드)
+# =============================================================================
+- name: "[Play 4] Configure /etc/hosts on target nodes"
+  hosts: all
+  become: true
+
+  vars:
+    repo_server_ip: "192.168.108.201"
+    repo_server_hostname: "repo.kubespray.miribit.lab"
+
+  tasks:
+  - name: "[HOSTS] Add repository server to /etc/hosts"
+    lineinfile:
+      path: /etc/hosts
+      line: "{{ repo_server_ip }} {{ repo_server_hostname }}"
+      state: present
+    tags:
+    - hosts
+
+  - name: "[HOSTS] Add all cluster hosts to /etc/hosts"
+    lineinfile:
+      path: /etc/hosts
+      line: "{{ hostvars[item].ansible_host }} {{ item }} {{ item.split('.')[0] }}"
+      state: present
+    loop: "{{ groups['all'] }}"
+    tags:
+    - hosts
+
+  - name: "[HOSTS] Verify repository server connectivity"
+    shell: "ping -c 1 {{ repo_server_hostname }} || ping -c 1 {{ repo_server_ip }}"
+    register: ping_result
+    failed_when: false
+    changed_when: false
+    tags:
+    - hosts
+    - verify
+
+  - name: "[HOSTS] Display connectivity result"
+    debug:
+      msg: "Repository server {{ 'reachable ✅' if ping_result.rc == 0 else 'unreachable ❌' }}"
+    tags:
+    - hosts
+    - verify
+
+# =============================================================================
+# Play 5: Swap 비활성화 (대상 노드)
+# =============================================================================
+- name: "[Play 5] Disable swap on target nodes"
+  hosts: all
+  become: true
+
+  tasks:
+  - name: "[SWAP] Disable swap immediately"
+    command: swapoff -a
+    changed_when: true
+    tags:
+    - swap
+
+  - name: "[SWAP] Remove swap entry from /etc/fstab"
+    lineinfile:
+      path: /etc/fstab
+      regexp: '.*swap.*'
+      state: absent
+    tags:
+    - swap
+
+  - name: "[SWAP] Verify swap is disabled"
+    shell: "swapon --show"
+    register: swap_status
+    changed_when: false
+    tags:
+    - swap
+    - verify
+
+  - name: "[SWAP] Display swap status"
+    debug:
+      msg: "{{ 'Swap is disabled ✅' if swap_status.stdout == '' else 'Swap is still active ❌: ' + swap_status.stdout }}"
+    tags:
+    - swap
+    - verify
+
+# =============================================================================
+# Play 6: 최종 검증 (대상 노드)
+# =============================================================================
+- name: "[Play 6] Final verification"
+  hosts: all
+  become: true
+
+  vars:
+    required_packages:
+    - conntrack-tools
+    - ipvsadm
+    - socat
+
+  tasks:
+  - name: "[VERIFY] Check all required packages"
+    shell: "rpm -q {{ required_packages | join(' ') }}"
+    register: pkg_check
+    changed_when: false
+    failed_when: false
+    tags:
+    - verify
+
+  - name: "[VERIFY] Display package status"
+    debug:
+      msg: "{{ pkg_check.stdout_lines }}"
+    tags:
+    - verify
+
+  - name: "[VERIFY] Check DNS configuration"
+    shell: "grep nameserver /etc/resolv.conf"
+    register: dns_check
+    changed_when: false
+    failed_when: false
+    tags:
+    - verify
+
+  - name: "[VERIFY] Check swap status"
+    shell: "free -h | grep Swap"
+    register: swap_check
+    changed_when: false
+    tags:
+    - verify
+
+  - name: "[VERIFY] Summary"
+    debug:
+      msg:
+      - "=== Pre-Setup Summary for {{ inventory_hostname }} ==="
+      - "Packages: {{ pkg_check.stdout_lines }}"
+      - "DNS: {{ dns_check.stdout }}"
+      - "Swap: {{ swap_check.stdout }}"
+    tags:
+    - verify
