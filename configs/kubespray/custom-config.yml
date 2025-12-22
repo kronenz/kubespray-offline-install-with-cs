@@ -44,12 +44,12 @@ kube_service_addresses: 10.201.0.0/18
 # kube-proxy 배포 스킵 설정
 # true로 설정하면 kubeadm init 시 'addon/kube-proxy' phase가 스킵되어
 # kube-proxy가 배포되지 않습니다.
-# 
+#
 # 사용 사례:
 #   - Cilium의 kube-proxy replacement 기능 사용 시
 #   - Calico의 eBPF 모드 사용 시
 #   - Kube-router와 같은 대체 솔루션 사용 시
-# 
+#
 # 주의: kube-proxy 없이는 Service의 ClusterIP 기능이 작동하지 않으므로,
 #       반드시 대체 솔루션(Cilium 등)을 배포해야 합니다.
 kube_proxy_remove: true
@@ -87,6 +87,7 @@ cert_manager_enabled: true
 # 다운로드할 수 있는 로컬 파일 서버의 주소입니다.
 # 이 서버는 미리 다운로드한 바이너리 파일들을 호스팅해야 합니다.
 files_repo: "http://192.168.108.201:8080"
+kubespray_version: "2.28.1"
 
 # =============================================================================
 # 바이너리 다운로드 URL 오버라이드 (Option 1: 권장 방식)
@@ -94,25 +95,25 @@ files_repo: "http://192.168.108.201:8080"
 # 파일 서버가 원본 URL 경로 구조를 그대로 유지하는 경우,
 # 아래와 같이 기본 URL만 변경하면 모든 바이너리 다운로드가
 # 자동으로 로컬 서버로 리다이렉트됩니다.
-# 
+#
 # 예: github.com/kubernetes/kubernetes/releases/... 
 #   -> http://192.168.108.201:8080/github.com/kubernetes/kubernetes/releases/...
 
 # GitHub 바이너리 다운로드 URL
 # Kubernetes, etcd, CNI 플러그인 등 GitHub에서 호스팅되는 바이너리
-github_url: "{{ files_repo }}/github.com"
+github_url: "{{ files_repo }}/{{ kubespray_version }}/github.com"
 
 # Kubernetes 공식 바이너리 다운로드 URL
 # kubeadm, kubectl, kubelet 등 Kubernetes 공식 바이너리
-dl_k8s_io_url: "{{ files_repo }}/dl.k8s.io"
+dl_k8s_io_url: "{{ files_repo }}/{{ kubespray_version }}/dl.k8s.io"
 
 # Google Cloud Storage 바이너리 다운로드 URL
 # gVisor, cri-o 등 Google Cloud Storage에서 호스팅되는 바이너리
-storage_googleapis_url: "{{ files_repo }}/storage.googleapis.com"
+storage_googleapis_url: "{{ files_repo }}/{{ kubespray_version }}/storage.googleapis.com"
 
 # Helm 설치 스크립트 다운로드 URL
 # Helm 바이너리 다운로드 URL
-get_helm_url: "{{ files_repo }}/get.helm.sh"
+get_helm_url: "{{ files_repo }}/{{ kubespray_version }}/get.helm.sh"
 
 # =============================================================================
 # Containerd 레지스트리 미러 설정
@@ -126,35 +127,34 @@ get_helm_url: "{{ files_repo }}/get.helm.sh"
 #   - capabilities: 허용할 작업 (pull: 이미지 다운로드, resolve: 이미지 해석)
 #   - skip_verify: TLS 인증서 검증 건너뛰기 (오프라인 환경에서 자체 서명 인증서 사용 시)
 containerd_registries_mirrors:
-  # Docker Hub (docker.io) 미러 설정
-  # 예: docker pull nginx -> repo.kubespray.miribit.lab:5000에서 다운로드
-  - prefix: docker.io
-    mirrors:
-      - host: http://repo.kubespray.miribit.lab:5000
-        capabilities: ["pull", "resolve"]  # 이미지 다운로드 및 해석 허용
-        skip_verify: true  # TLS 인증서 검증 건너뛰기
+# Docker Hub (docker.io) 미러 설정
+# 예: docker pull nginx -> repo.kubespray.miribit.lab:5000에서 다운로드
+- prefix: docker.io
+  mirrors:
+  - host: http://repo.kubespray.miribit.lab:5000
+    capabilities: [ "pull", "resolve" ] # 이미지 다운로드 및 해석 허용
+    skip_verify: true # TLS 인증서 검증 건너뛰기
 
-  # Quay.io 미러 설정
-  # Red Hat, CoreOS 등에서 호스팅하는 이미지 레지스트리
-  - prefix: quay.io
-    mirrors:
-      - host: http://repo.kubespray.miribit.lab:5001
-        capabilities: ["pull", "resolve"]
-        skip_verify: true
+# Quay.io 미러 설정
+# Red Hat, CoreOS 등에서 호스팅하는 이미지 레지스트리
+- prefix: quay.io
+  mirrors:
+  - host: http://repo.kubespray.miribit.lab:5001
+    capabilities: [ "pull", "resolve" ]
+    skip_verify: true
 
-  # GitHub Container Registry (ghcr.io) 미러 설정
-  # GitHub에서 호스팅하는 컨테이너 이미지 레지스트리
-  - prefix: ghcr.io
-    mirrors:
-      - host: http://repo.kubespray.miribit.lab:5002
-        capabilities: ["pull", "resolve"]
-        skip_verify: true
+# GitHub Container Registry (ghcr.io) 미러 설정
+# GitHub에서 호스팅하는 컨테이너 이미지 레지스트리
+- prefix: ghcr.io
+  mirrors:
+  - host: http://repo.kubespray.miribit.lab:5002
+    capabilities: [ "pull", "resolve" ]
+    skip_verify: true
 
-  # Kubernetes 공식 레지스트리 (registry.k8s.io) 미러 설정
-  # Kubernetes 공식 컨테이너 이미지 (kube-apiserver, kube-controller-manager 등)
-  - prefix: registry.k8s.io
-    mirrors:
-      - host: http://repo.kubespray.miribit.lab:5003
-        capabilities: ["pull", "resolve"]
-        skip_verify: true
-
+# Kubernetes 공식 레지스트리 (registry.k8s.io) 미러 설정
+# Kubernetes 공식 컨테이너 이미지 (kube-apiserver, kube-controller-manager 등)
+- prefix: registry.k8s.io
+  mirrors:
+  - host: http://repo.kubespray.miribit.lab:5003
+    capabilities: [ "pull", "resolve" ]
+    skip_verify: true

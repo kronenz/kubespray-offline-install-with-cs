@@ -118,13 +118,13 @@ hubble:
   metrics:
     # 수집할 메트릭 목록
     enabled:
-      - dns                    # DNS 쿼리 메트릭
-      - drop                    # 드롭된 패킷 메트릭
-      - tcp                     # TCP 연결 메트릭
-      - flow                    # 네트워크 플로우 메트릭
-      - port-distribution       # 포트 분포 메트릭
-      - icmp                    # ICMP 메트릭
-      - 'httpV2:exemplars=true;labelsContext=source_ip,source_namespace,source_workload,destination_ip,destination_namespace,destination_workload,traffic_direction'
+    - dns # DNS 쿼리 메트릭
+    - drop # 드롭된 패킷 메트릭
+    - tcp # TCP 연결 메트릭
+    - flow # 네트워크 플로우 메트릭
+    - port-distribution # 포트 분포 메트릭
+    - icmp # ICMP 메트릭
+    - 'httpV2:exemplars=true;labelsContext=source_ip,source_namespace,source_workload,destination_ip,destination_namespace,destination_workload,traffic_direction'
     # OpenMetrics 형식으로 메트릭 내보내기 활성화
     # Prometheus와 호환되는 형식
     enableOpenMetrics: true
@@ -143,8 +143,8 @@ hubble:
       #   app: cilium
       #   component: hubble-metrics
 
-  # Hubble Relay 설정
-  # Hubble Relay는 여러 노드의 Hubble 인스턴스에서 메트릭을 집계
+      # Hubble Relay 설정
+      # Hubble Relay는 여러 노드의 Hubble 인스턴스에서 메트릭을 집계
   relay:
     enabled: true
     # ConfigMap 업데이트 시 자동으로 Pod 재시작
@@ -161,8 +161,9 @@ hubble:
         # enabled: true
         # interval: "10s"
 
-  # Hubble UI 설정
+        # Hubble UI 설정
   ui:
+    enabled: true
     # ConfigMap 업데이트 시 자동으로 Pod 재시작
     rollOutPods: true
     # 서비스 설정
@@ -177,7 +178,7 @@ hubble:
       # Ingress 클래스 이름 (Cilium Ingress Controller 사용)
       className: "cilium"
       hosts:
-        - hubble-ui.cilium.io
+      - hubble-ui.cilium.io
 
 # ==============================================================================
 # IP Address Management (IPAM) 설정
@@ -191,7 +192,7 @@ ipam:
   operator:
     # IPv4 Pod CIDR 리스트
     # 각 노드에 할당될 IP 범위의 상위 CIDR
-    clusterPoolIPv4PodCIDRList: ["10.200.0.0/16"]
+    clusterPoolIPv4PodCIDRList: [ "10.200.0.0/16" ]
     # 각 노드에 할당될 IPv4 서브넷 마스크 크기
     # /24 = 256개 IP 주소 (254개 사용 가능, .0과 .255 제외)
     clusterPoolIPv4MaskSize: 24
@@ -284,7 +285,7 @@ prometheus:
     #     targetLabel: node
     #     action: replace
 
-# Cilium Operator Prometheus 메트릭
+    # Cilium Operator Prometheus 메트릭
 operator:
   prometheus:
     # 메트릭 서비스 생성
@@ -304,64 +305,64 @@ operator:
       #   app: cilium
       #   component: operator
 
-# ==============================================================================
-# 향후 Prometheus CRD 설정 가이드
-# ==============================================================================
-#
-# Prometheus Operator를 설치한 후 다음 설정들을 활성화해야 합니다:
-#
-# 1. Prometheus CRD 설치 확인:
-#    kubectl get crd servicemonitors.monitoring.coreos.com
-#
-# 2. Cilium Agent ServiceMonitor 활성화:
-#    prometheus.serviceMonitor.enabled: true
-#
-# 3. Cilium Operator ServiceMonitor 활성화:
-#    operator.prometheus.serviceMonitor.enabled: true
-#
-# 4. Hubble Metrics ServiceMonitor 활성화:
-#    hubble.metrics.serviceMonitor.enabled: true
-#
-# 5. Hubble Relay Prometheus ServiceMonitor 활성화:
-#    hubble.relay.prometheus.serviceMonitor.enabled: true
-#
-# 6. Envoy ServiceMonitor 활성화 (L7 LB 사용 시):
-#    envoy.prometheus.serviceMonitor.enabled: true
-#
-# 현재 설정에서는 Prometheus가 Service의 prometheus.io/scrape 어노테이션을
-# 통해 메트릭을 수집할 수 있습니다. ServiceMonitor를 활성화하면 더 세밀한
-# 제어가 가능합니다.
-#
-# ==============================================================================
-# 주요 변경 사항 요약
-# ==============================================================================
-#
-# 1. 성능 최적화:
-#    - datapathMode: netkit (Linux 6.7+)
-#    - socketLB 활성화
-#    - loadBalancer 모드: hybrid
-#    - loadBalancer 가속화: best-effort
-#    - routingMode: native
-#
-# 2. 네트워크 설정:
-#    - IPAM: cluster-pool 모드
-#    - Pod CIDR: 10.200.0.0/16
-#    - Native Routing CIDR: 10.200.0.0/16
-#    - BGP Control Plane 활성화
-#
-# 3. 관찰성:
-#    - Hubble 활성화 (메트릭, Relay, UI)
-#    - Prometheus 메트릭 활성화 (Agent, Operator)
-#    - OpenMetrics 형식 활성화
-#
-# 4. Ingress:
-#    - Cilium Ingress Controller 활성화
-#    - 기본 Ingress Controller로 설정
-#    - Shared LoadBalancer 모드
-#
-# 5. API Rate Limiting:
-#    - Agent: qps=40, burst=80 (기본값의 4배)
-#    - Operator: qps=400, burst=800 (기본값의 4배)
-#
-# ==============================================================================
+      # ==============================================================================
+      # 향후 Prometheus CRD 설정 가이드
+      # ==============================================================================
+      #
+      # Prometheus Operator를 설치한 후 다음 설정들을 활성화해야 합니다:
+      #
+      # 1. Prometheus CRD 설치 확인:
+      #    kubectl get crd servicemonitors.monitoring.coreos.com
+      #
+      # 2. Cilium Agent ServiceMonitor 활성화:
+      #    prometheus.serviceMonitor.enabled: true
+      #
+      # 3. Cilium Operator ServiceMonitor 활성화:
+      #    operator.prometheus.serviceMonitor.enabled: true
+      #
+      # 4. Hubble Metrics ServiceMonitor 활성화:
+      #    hubble.metrics.serviceMonitor.enabled: true
+      #
+      # 5. Hubble Relay Prometheus ServiceMonitor 활성화:
+      #    hubble.relay.prometheus.serviceMonitor.enabled: true
+      #
+      # 6. Envoy ServiceMonitor 활성화 (L7 LB 사용 시):
+      #    envoy.prometheus.serviceMonitor.enabled: true
+      #
+      # 현재 설정에서는 Prometheus가 Service의 prometheus.io/scrape 어노테이션을
+      # 통해 메트릭을 수집할 수 있습니다. ServiceMonitor를 활성화하면 더 세밀한
+      # 제어가 가능합니다.
+      #
+      # ==============================================================================
+      # 주요 변경 사항 요약
+      # ==============================================================================
+      #
+      # 1. 성능 최적화:
+      #    - datapathMode: netkit (Linux 6.7+)
+      #    - socketLB 활성화
+      #    - loadBalancer 모드: hybrid
+      #    - loadBalancer 가속화: best-effort
+      #    - routingMode: native
+      #
+      # 2. 네트워크 설정:
+      #    - IPAM: cluster-pool 모드
+      #    - Pod CIDR: 10.200.0.0/16
+      #    - Native Routing CIDR: 10.200.0.0/16
+      #    - BGP Control Plane 활성화
+      #
+      # 3. 관찰성:
+      #    - Hubble 활성화 (메트릭, Relay, UI)
+      #    - Prometheus 메트릭 활성화 (Agent, Operator)
+      #    - OpenMetrics 형식 활성화
+      #
+      # 4. Ingress:
+      #    - Cilium Ingress Controller 활성화
+      #    - 기본 Ingress Controller로 설정
+      #    - Shared LoadBalancer 모드
+      #
+      # 5. API Rate Limiting:
+      #    - Agent: qps=40, burst=80 (기본값의 4배)
+      #    - Operator: qps=400, burst=800 (기본값의 4배)
+      #
+      # ==============================================================================
 
