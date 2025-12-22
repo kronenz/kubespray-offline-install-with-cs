@@ -66,6 +66,10 @@ NO_HTTP_SERVER=true bash manage-offline-files.sh
 ```
 
 `offline-files.tar.gz` 파일이 생성되었는지 확인한다.
+생성된 파일의 구분을 위해 버전을 명시한다
+```bash
+mv offline-files.tar.gz offline-files-v2.x.y.tar.gz
+```
 
 ## 4. 레포 서버로 파일 전송
 
@@ -80,13 +84,16 @@ scp nginx.conf root@<repo-server-ip>:/root
 
 ```bash
 ssh root@<repo-server-ip>
-tar -xvf offline-files.tar.gz
+mkdir v2.x.y
+tar -xvf offline-files-v2.x.y.tar.gz \
+  --strip-components=1 \
+  -C v2.x.y
 ```
 
 압축 해제 후 디렉토리 구조:
 
 ```
-ls -al offline-files
+ls -al 2.x.y
 total 8
 drwxr-xr-x.  6 root root   90 Dec  3 19:24 .
 dr-xr-x---.  4 root root 4096 Dec  3 19:31 ..
@@ -101,6 +108,8 @@ drwxr-xr-x.  4 root root   33 Dec  3 19:24 storage.googleapis.com
 Nginx 컨테이너를 사용하여 파일 레포지토리를 구성한다.
 
 ```bash
+mkdir ~/offline-files
+
 sudo podman run --restart=always -d -p 8080:80 \
   --name nginx \
   -v $(pwd)/offline-files:/usr/share/nginx/html/download:z \
