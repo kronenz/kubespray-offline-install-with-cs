@@ -10,22 +10,41 @@ Online 연결이 되어있는 Node에서 오프라인 설치에 필요한 파일
 
 실행할 쉘 파일이 Ansible로 실행되므로 Ansible 배포가 선행되어야 한다.
 
-### 1.1. Kubespray 클론
+### 1.1. Kubespray 다운로드
 
 ```bash
+# 방법 1: Git 클론
 git clone https://github.com/kubernetes-sigs/kubespray.git
+cd kubespray
+git checkout v2.29.1  # 원하는 버전으로 체크아웃
+
+# 방법 2: 릴리즈 아카이브 다운로드
+wget https://github.com/kubernetes-sigs/kubespray/archive/refs/tags/v2.29.1.tar.gz
+tar -xzf v2.29.1.tar.gz
+mv kubespray-2.29.1 kubespray
 ```
 
 ### 1.2. Python 가상환경 설정 및 의존성 설치
 
+> ⚠️ **권장**: 버전별로 별도의 가상환경을 관리하면 여러 버전을 동시에 유지할 수 있습니다.
+
 ```bash
-VENVDIR=kubespray-venv
+# 버전별 가상환경 설정 (권장)
+KUBESPRAY_VERSION=2.29.1
+VENVDIR=venv-${KUBESPRAY_VERSION}
 KUBESPRAYDIR=kubespray
+
 python3 -m venv $VENVDIR
 source $VENVDIR/bin/activate
 cd $KUBESPRAYDIR
+pip install -U pip
 pip install -r requirements.txt
+
+# 설치 확인
+ansible --version
 ```
+
+**참고**: 오프라인 환경에서 배포할 때는 이 가상환경을 함께 패키징하거나, 대상 환경에서 동일하게 설정해야 합니다.
 
 ## 2. 파일 및 이미지 목록 생성
 

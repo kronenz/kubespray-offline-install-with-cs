@@ -5,7 +5,7 @@
 #
 # 이 플레이북은 실제 배포 전에 다음을 검증합니다:
 #   1. 파일 서버 접근 가능 여부
-#   2. 필수 바이너리 파일 존재 여부
+#   2. 필수 바이너리 파일 존재 여부 (files.list 기반)
 #   3. 컨테이너 레지스트리 접근 가능 여부
 #   4. 필수 컨테이너 이미지 존재 여부
 #
@@ -13,23 +13,26 @@
 # 사용법:
 # -----------------------------------------------------------------------------
 #
-# 기본 실행 (기본값 사용):
-#   ansible-playbook playbooks/verify-offline-resources.yml
+# 1. 먼저 files.list 생성 (오프라인 환경에서도 실행 가능):
+#    cd sources/kubespray/kubespray-2.29.1/contrib/offline
+#    bash generate_list.sh
 #
-# Kubernetes 버전 지정:
-#   ansible-playbook playbooks/verify-offline-resources.yml \
-#     -e kube_version=1.33.7
+# 2. 검증 플레이북 실행:
 #
-# 모든 변수 커스텀:
-#   ansible-playbook playbooks/verify-offline-resources.yml \
-#     -e files_repo=http://192.168.1.100:8080 \
-#     -e kubespray_version=v2.29.1 \
-#     -e kube_version=1.33.7
+#    기본 실행 (files.list 자동 감지):
+#      ansible-playbook playbooks/verify-offline-resources.yml
 #
-# custom-config.yml에서 변수 가져오기:
-#   ansible-playbook playbooks/verify-offline-resources.yml \
-#     -e @sources/kubespray/kubespray-2.29.1/inventory/offline-test/custom-config.yml \
-#     -e kube_version=1.33.7
+#    Kubernetes 버전 지정:
+#      ansible-playbook playbooks/verify-offline-resources.yml \
+#        -e kube_version=1.33.7
+#
+#    files.list 경로 직접 지정:
+#      ansible-playbook playbooks/verify-offline-resources.yml \
+#        -e files_list_path=/path/to/files.list
+#
+#    빠른 검증 (핵심 파일만):
+#      ansible-playbook playbooks/verify-offline-resources.yml \
+#        -e quick_check=true
 #
 # 참고: 이 플레이북은 localhost에서만 실행되므로 -i 옵션(인벤토리)은 불필요합니다.
 # =============================================================================
@@ -40,145 +43,227 @@
   gather_facts: false
 
   vars:
-    # custom-config.yml에서 오버라이드됨
+    # 기본 설정 (custom-config.yml에서 오버라이드 가능)
     files_repo: "http://192.168.108.201:8080"
     kubespray_version: "v2.29.1"
     kube_version: "1.33.7"
-
-    # 검증할 필수 바이너리 목록
-    required_binaries:
-    - name: kubeadm
-      url: "{{ files_repo }}/{{ kubespray_version }}/dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubeadm"
-    - name: kubelet
-      url: "{{ files_repo }}/{{ kubespray_version }}/dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubelet"
-    - name: kubectl
-      url: "{{ files_repo }}/{{ kubespray_version }}/dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubectl"
+    
+    # files.list 경로 (generate_list.sh로 생성됨)
+    files_list_path: "{{ playbook_dir }}/../sources/kubespray/kubespray-{{ kubespray_version | regex_replace('^v', '') }}/contrib/offline/temp/files.list"
+    
+    # 빠른 검증 모드 (핵심 파일만 검사)
+    quick_check: false
+    
+    # 빠른 검증 시 검사할 핵심 파일 패턴
+    essential_patterns:
+      - "kubeadm"
+      - "kubelet"
+      - "kubectl"
+      - "etcd"
+      - "cni-plugins"
+      - "crictl"
+      - "containerd"
+    
     # 검증할 레지스트리 목록
     registries_to_check:
-    - name: "Docker Hub Mirror"
-      url: "http://repo.kubespray.miribit.lab:5000/v2/_catalog"
-    - name: "Quay.io Mirror"
-      url: "http://repo.kubespray.miribit.lab:5001/v2/_catalog"
-    - name: "GHCR Mirror"
-      url: "http://repo.kubespray.miribit.lab:5002/v2/_catalog"
-    - name: "registry.k8s.io Mirror"
-      url: "http://repo.kubespray.miribit.lab:5003/v2/_catalog"
+      - name: "Docker Hub Mirror"
+        url: "http://repo.kubespray.miribit.lab:5000/v2/_catalog"
+      - name: "Quay.io Mirror"
+        url: "http://repo.kubespray.miribit.lab:5001/v2/_catalog"
+      - name: "GHCR Mirror"
+        url: "http://repo.kubespray.miribit.lab:5002/v2/_catalog"
+      - name: "registry.k8s.io Mirror"
+        url: "http://repo.kubespray.miribit.lab:5003/v2/_catalog"
 
   tasks:
-  # =========================================================================
-  # Step 1: 파일 서버 접근 확인
-  # =========================================================================
-  - name: "[1/4] Check file server accessibility"
-    uri:
-      url: "{{ files_repo }}"
-      method: HEAD
-      timeout: 10
-    register: file_server_check
-    failed_when: false
-    tags: [ files ]
+    # =========================================================================
+    # Step 0: files.list 확인
+    # =========================================================================
+    - name: "[0/5] Check if files.list exists"
+      stat:
+        path: "{{ files_list_path }}"
+      register: files_list_stat
+      tags: [always]
 
-  - name: "[1/4] File server status"
-    debug:
-      msg: "{{ '[OK] File server accessible' if file_server_check.status == 200 else '[FAIL] File server NOT accessible: ' + (file_server_check.msg | default('unknown error')) }}"
-    tags: [ files ]
+    - name: "[0/5] Warn if files.list not found"
+      debug:
+        msg: |
+          [WARNING] files.list not found at: {{ files_list_path }}
+          
+          Please run generate_list.sh first:
+            cd sources/kubespray/kubespray-{{ kubespray_version | regex_replace('^v', '') }}/contrib/offline
+            bash generate_list.sh
+          
+          Falling back to essential files check only.
+      when: not files_list_stat.stat.exists
+      tags: [always]
 
-  # =========================================================================
-  # Step 2: 필수 바이너리 파일 확인
-  # =========================================================================
-  - name: "[2/4] Check required binary files"
-    uri:
-      url: "{{ item.url }}"
-      method: HEAD
-      timeout: 30
-    loop: "{{ required_binaries }}"
-    loop_control:
-      label: "{{ item.name }}"
-    register: binary_checks
-    failed_when: false
-    tags: [ files, binaries ]
+    - name: "[0/5] Read files.list"
+      slurp:
+        src: "{{ files_list_path }}"
+      register: files_list_content
+      when: files_list_stat.stat.exists
+      tags: [files]
 
-  - name: "[2/4] Binary files status"
-    debug:
-      msg: >-
-        {{ item.item.name }}: {{ '[OK] Available' if item.status == 200 else '[FAIL] NOT FOUND (' + (item.status | string) + ')' }} - {{ item.item.url }}
-    loop: "{{ binary_checks.results }}"
-    loop_control:
-      label: "{{ item.item.name }}"
-    tags: [ files, binaries ]
+    - name: "[0/5] Parse files.list"
+      set_fact:
+        all_files_from_list: "{{ (files_list_content.content | b64decode).split('\n') | select | list }}"
+      when: files_list_stat.stat.exists
+      tags: [files]
 
-  # =========================================================================
-  # Step 3: 컨테이너 레지스트리 접근 확인
-  # =========================================================================
-  - name: "[3/4] Check container registries"
-    uri:
-      url: "{{ item.url }}"
-      method: GET
-      timeout: 10
-    loop: "{{ registries_to_check }}"
-    loop_control:
-      label: "{{ item.name }}"
-    register: registry_checks
-    failed_when: false
-    tags: [ images, registries ]
+    # =========================================================================
+    # Step 1: 파일 서버 접근 확인
+    # =========================================================================
+    - name: "[1/5] Check file server accessibility"
+      uri:
+        url: "{{ files_repo }}"
+        method: HEAD
+        timeout: 10
+      register: file_server_check
+      failed_when: false
+      tags: [files]
 
-  - name: "[3/4] Registry status"
-    debug:
-      msg: >-
-        {{ item.item.name }}: {{ '[OK] Accessible' if item.status == 200 else '[FAIL] NOT accessible (' + (item.status | string | default('connection failed')) + ')' }}
-    loop: "{{ registry_checks.results }}"
-    loop_control:
-      label: "{{ item.item.name }}"
-    tags: [ images, registries ]
+    - name: "[1/5] File server status"
+      debug:
+        msg: "{{ '[OK] File server accessible: ' + files_repo if file_server_check.status == 200 else '[FAIL] File server NOT accessible: ' + files_repo }}"
+      tags: [files]
 
-  # =========================================================================
-  # Step 4: 필수 컨테이너 이미지 확인 (registry.k8s.io)
-  # =========================================================================
-  - name: "[4/4] Check core Kubernetes images in registry"
-    uri:
-      url: "http://repo.kubespray.miribit.lab:5003/v2/kube-apiserver/tags/list"
-      method: GET
-      timeout: 10
-    register: apiserver_tags
-    failed_when: false
-    tags: [ images ]
+    # =========================================================================
+    # Step 2: 필수 바이너리 파일 확인 (files.list 기반)
+    # =========================================================================
+    - name: "[2/5] Filter essential files for quick check"
+      set_fact:
+        files_to_check: "{{ all_files_from_list | select('search', essential_patterns | join('|')) | list }}"
+      when: 
+        - files_list_stat.stat.exists
+        - quick_check | bool
+      tags: [files]
 
-  - name: "[4/4] Parse kube-apiserver tags"
-    set_fact:
-      apiserver_has_version: "{{ ('v' + kube_version) in (apiserver_tags.json.tags | default([])) }}"
-    when: apiserver_tags.status == 200
-    tags: [ images ]
+    - name: "[2/5] Use all files for full check"
+      set_fact:
+        files_to_check: "{{ all_files_from_list }}"
+      when: 
+        - files_list_stat.stat.exists
+        - not (quick_check | bool)
+      tags: [files]
 
-  - name: "[4/4] Kubernetes images status"
-    debug:
-      msg: >-
-        kube-apiserver:v{{ kube_version }}: {{ '[OK] Available' if apiserver_has_version | default(false) else '[FAIL] NOT FOUND - Check if images are cached in registry' }}
-    tags: [ images ]
+    - name: "[2/5] Fallback to essential files only"
+      set_fact:
+        files_to_check:
+          - "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubeadm"
+          - "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubelet"
+          - "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubectl"
+      when: not files_list_stat.stat.exists
+      tags: [files]
 
-  # =========================================================================
-  # Summary
-  # =========================================================================
-  - name: "=== VERIFICATION SUMMARY ==="
-    debug:
-      msg:
-      - "=============================================="
-      - "       OFFLINE RESOURCE VERIFICATION"
-      - "=============================================="
-      - ""
-      - "Kubespray Version: {{ kubespray_version }}"
-      - "Kubernetes Version: v{{ kube_version }}"
-      - ""
-      - "File Server: {{ files_repo }}"
-      - "  Status: {{ '[OK]' if file_server_check.status == 200 else '[FAIL]' }}"
-      - ""
-      - "Binary Files:"
-      - "{% for item in binary_checks.results %}  - {{ item.item.name }}: {{ '[OK]' if item.status == 200 else '[FAIL]' }}
+    - name: "[2/5] Convert URLs to file server URLs"
+      set_fact:
+        files_to_verify: >-
+          {{ files_to_check | map('regex_replace', '^https?://(.+)$', files_repo + '/' + kubespray_version + '/\1') | list }}
+      tags: [files]
 
-        {% endfor %}"
-      - "Container Registries:"
-      - "{% for item in registry_checks.results %}  - {{ item.item.name }}: {{ '[OK]' if item.status == 200 else '[FAIL]' }}
+    - name: "[2/5] Check binary files on file server"
+      uri:
+        url: "{{ item }}"
+        method: HEAD
+        timeout: 30
+      loop: "{{ files_to_verify }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      register: binary_checks
+      failed_when: false
+      tags: [files]
 
-        {% endfor %}"
-      - ""
-      - "{{ '[SUCCESS] All resources verified! Ready for deployment.' if (file_server_check.status == 200 and binary_checks.results | selectattr('status', 'equalto', 200) | list | length == required_binaries | length) else '[WARNING] Some resources are missing. Please check before deployment.' }}"
-      - "=============================================="
-    tags: [ always ]
+    - name: "[2/5] Binary files status"
+      debug:
+        msg: "{{ item.item | basename }}: {{ '[OK]' if item.status == 200 else '[FAIL] (' + (item.status | string) + ')' }}"
+      loop: "{{ binary_checks.results }}"
+      loop_control:
+        label: "{{ item.item | basename }}"
+      when: item.status != 200 or (item.status == 200 and not (quick_check | bool))
+      tags: [files]
+
+    # =========================================================================
+    # Step 3: 컨테이너 레지스트리 접근 확인
+    # =========================================================================
+    - name: "[3/5] Check container registries"
+      uri:
+        url: "{{ item.url }}"
+        method: GET
+        timeout: 10
+      loop: "{{ registries_to_check }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: registry_checks
+      failed_when: false
+      tags: [images, registries]
+
+    - name: "[3/5] Registry status"
+      debug:
+        msg: "{{ item.item.name }}: {{ '[OK]' if item.status == 200 else '[FAIL] (' + (item.status | string | default('connection failed')) + ')' }}"
+      loop: "{{ registry_checks.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      tags: [images, registries]
+
+    # =========================================================================
+    # Step 4: 필수 컨테이너 이미지 확인 (registry.k8s.io)
+    # =========================================================================
+    - name: "[4/5] Check core Kubernetes images in registry"
+      uri:
+        url: "http://repo.kubespray.miribit.lab:5003/v2/kube-apiserver/tags/list"
+        method: GET
+        timeout: 10
+      register: apiserver_tags
+      failed_when: false
+      tags: [images]
+
+    - name: "[4/5] Parse kube-apiserver tags"
+      set_fact:
+        apiserver_has_version: "{{ ('v' + kube_version) in (apiserver_tags.json.tags | default([])) }}"
+      when: apiserver_tags.status == 200
+      tags: [images]
+
+    - name: "[4/5] Kubernetes images status"
+      debug:
+        msg: "kube-apiserver:v{{ kube_version }}: {{ '[OK]' if apiserver_has_version | default(false) else '[FAIL] NOT FOUND' }}"
+      tags: [images]
+
+    # =========================================================================
+    # Step 5: Summary
+    # =========================================================================
+    - name: "[5/5] Calculate results"
+      set_fact:
+        files_ok_count: "{{ binary_checks.results | selectattr('status', 'equalto', 200) | list | length }}"
+        files_total_count: "{{ binary_checks.results | length }}"
+        registries_ok_count: "{{ registry_checks.results | selectattr('status', 'equalto', 200) | list | length }}"
+        registries_total_count: "{{ registry_checks.results | length }}"
+      tags: [always]
+
+    - name: "=== VERIFICATION SUMMARY ==="
+      debug:
+        msg:
+          - "=============================================="
+          - "       OFFLINE RESOURCE VERIFICATION"
+          - "=============================================="
+          - ""
+          - "Kubespray Version: {{ kubespray_version }}"
+          - "Kubernetes Version: v{{ kube_version }}"
+          - "Check Mode: {{ 'Quick (essential files only)' if quick_check | bool else 'Full (all files)' }}"
+          - ""
+          - "File Server: {{ files_repo }}"
+          - "  Status: {{ '[OK]' if file_server_check.status == 200 else '[FAIL]' }}"
+          - ""
+          - "Binary Files: {{ files_ok_count }}/{{ files_total_count }} available"
+          - "  {{ '[OK] All files available' if files_ok_count == files_total_count else '[FAIL] ' + (files_total_count | int - files_ok_count | int) | string + ' files missing' }}"
+          - ""
+          - "Container Registries: {{ registries_ok_count }}/{{ registries_total_count }} accessible"
+          - "  {{ '[OK] All registries accessible' if registries_ok_count == registries_total_count else '[FAIL] Some registries not accessible' }}"
+          - ""
+          - "Kubernetes Images:"
+          - "  kube-apiserver:v{{ kube_version }}: {{ '[OK]' if apiserver_has_version | default(false) else '[FAIL]' }}"
+          - ""
+          - "=============================================="
+          - "{{ '[SUCCESS] All resources verified! Ready for deployment.' if (file_server_check.status == 200 and files_ok_count == files_total_count and registries_ok_count == registries_total_count) else '[WARNING] Some resources are missing. Please check before deployment.' }}"
+          - "=============================================="
+      tags: [always]
