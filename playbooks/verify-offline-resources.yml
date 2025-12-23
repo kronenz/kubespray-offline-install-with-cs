@@ -5,7 +5,7 @@
 #
 # 이 플레이북은 실제 배포 전에 다음을 검증합니다:
 #   1. 파일 서버 접근 가능 여부
-#   2. 필수 바이너리 파일 존재 여부 (files.list 기반)
+#   2. 필수 바이너리 파일 존재 여부 (files.list 자동 생성)
 #   3. 컨테이너 레지스트리 접근 가능 여부
 #   4. 필수 컨테이너 이미지 존재 여부
 #
@@ -13,26 +13,20 @@
 # 사용법:
 # -----------------------------------------------------------------------------
 #
-# 1. 먼저 files.list 생성 (오프라인 환경에서도 실행 가능):
-#    cd sources/kubespray/kubespray-2.29.1/contrib/offline
-#    bash generate_list.sh
+# 기본 실행 (files.list 자동 생성 및 검증):
+#   ansible-playbook playbooks/verify-offline-resources.yml
 #
-# 2. 검증 플레이북 실행:
+# Kubernetes 버전 지정:
+#   ansible-playbook playbooks/verify-offline-resources.yml \
+#     -e kube_version=1.33.7
 #
-#    기본 실행 (files.list 자동 감지):
-#      ansible-playbook playbooks/verify-offline-resources.yml
+# 빠른 검증 (핵심 파일만):
+#   ansible-playbook playbooks/verify-offline-resources.yml \
+#     -e quick_check=true
 #
-#    Kubernetes 버전 지정:
-#      ansible-playbook playbooks/verify-offline-resources.yml \
-#        -e kube_version=1.33.7
-#
-#    files.list 경로 직접 지정:
-#      ansible-playbook playbooks/verify-offline-resources.yml \
-#        -e files_list_path=/path/to/files.list
-#
-#    빠른 검증 (핵심 파일만):
-#      ansible-playbook playbooks/verify-offline-resources.yml \
-#        -e quick_check=true
+# files.list 경로 직접 지정 (generate_list.sh 스킵):
+#   ansible-playbook playbooks/verify-offline-resources.yml \
+#     -e files_list_path=/path/to/files.list
 #
 # 참고: 이 플레이북은 localhost에서만 실행되므로 -i 옵션(인벤토리)은 불필요합니다.
 # =============================================================================
@@ -48,8 +42,11 @@
     kubespray_version: "v2.29.1"
     kube_version: "1.33.7"
     
-    # files.list 경로 (generate_list.sh로 생성됨)
-    files_list_path: "{{ playbook_dir }}/../sources/kubespray/kubespray-{{ kubespray_version | regex_replace('^v', '') }}/contrib/offline/temp/files.list"
+    # Kubespray 디렉토리 경로
+    kubespray_dir: "{{ playbook_dir }}/../sources/kubespray/kubespray-{{ kubespray_version | regex_replace('^v', '') }}"
+    
+    # files.list 경로 (generate_list.sh로 자동 생성됨)
+    files_list_path: "{{ kubespray_dir }}/contrib/offline/temp/files.list"
     
     # 빠른 검증 모드 (핵심 파일만 검사)
     quick_check: false
@@ -77,7 +74,7 @@
 
   tasks:
     # =========================================================================
-    # Step 0: files.list 확인
+    # Step 0: files.list 자동 생성
     # =========================================================================
     - name: "[0/5] Check if files.list exists"
       stat:
@@ -85,30 +82,51 @@
       register: files_list_stat
       tags: [always]
 
-    - name: "[0/5] Warn if files.list not found"
+    - name: "[0/5] Generate files.list automatically"
+      shell: |
+        cd {{ kubespray_dir }}/contrib/offline
+        bash generate_list.sh
+      args:
+        creates: "{{ files_list_path }}"
+      when: not files_list_stat.stat.exists
+      register: generate_list_result
+      tags: [always]
+
+    - name: "[0/5] Verify files.list was created"
+      stat:
+        path: "{{ files_list_path }}"
+      register: files_list_stat_after
+      when: generate_list_result is changed
+      tags: [always]
+
+    - name: "[0/5] Update files.list status"
+      set_fact:
+        files_list_stat: "{{ files_list_stat_after }}"
+      when: generate_list_result is changed and files_list_stat_after.stat.exists
+      tags: [always]
+
+    - name: "[0/5] Warn if files.list generation failed"
       debug:
         msg: |
-          [WARNING] files.list not found at: {{ files_list_path }}
+          [WARNING] Failed to generate files.list at: {{ files_list_path }}
           
-          Please run generate_list.sh first:
-            cd sources/kubespray/kubespray-{{ kubespray_version | regex_replace('^v', '') }}/contrib/offline
-            bash generate_list.sh
+          Kubespray directory: {{ kubespray_dir }}
           
           Falling back to essential files check only.
-      when: not files_list_stat.stat.exists
+      when: not (files_list_stat.stat.exists | default(false))
       tags: [always]
 
     - name: "[0/5] Read files.list"
       slurp:
         src: "{{ files_list_path }}"
       register: files_list_content
-      when: files_list_stat.stat.exists
+      when: files_list_stat.stat.exists | default(false)
       tags: [files]
 
     - name: "[0/5] Parse files.list"
       set_fact:
         all_files_from_list: "{{ (files_list_content.content | b64decode).split('\n') | select | list }}"
-      when: files_list_stat.stat.exists
+      when: files_list_stat.stat.exists | default(false)
       tags: [files]
 
     # =========================================================================
@@ -135,7 +153,7 @@
       set_fact:
         files_to_check: "{{ all_files_from_list | select('search', essential_patterns | join('|')) | list }}"
       when: 
-        - files_list_stat.stat.exists
+        - files_list_stat.stat.exists | default(false)
         - quick_check | bool
       tags: [files]
 
@@ -143,7 +161,7 @@
       set_fact:
         files_to_check: "{{ all_files_from_list }}"
       when: 
-        - files_list_stat.stat.exists
+        - files_list_stat.stat.exists | default(false)
         - not (quick_check | bool)
       tags: [files]
 
@@ -153,7 +171,7 @@
           - "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubeadm"
           - "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubelet"
           - "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubectl"
-      when: not files_list_stat.stat.exists
+      when: not (files_list_stat.stat.exists | default(false))
       tags: [files]
 
     - name: "[2/5] Convert URLs to file server URLs"
