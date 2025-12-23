@@ -61,16 +61,19 @@
       - "crictl"
       - "containerd"
     
+    # 레지스트리 미러 호스트 (환경에 맞게 변경)
+    registry_host: "repo.kubespray.miribit.lab"
+    
     # 검증할 레지스트리 목록
     registries_to_check:
       - name: "Docker Hub Mirror"
-        url: "http://repo.kubespray.miribit.lab:5000/v2/_catalog"
+        url: "http://{{ registry_host }}:5000/v2/_catalog"
       - name: "Quay.io Mirror"
-        url: "http://repo.kubespray.miribit.lab:5001/v2/_catalog"
+        url: "http://{{ registry_host }}:5001/v2/_catalog"
       - name: "GHCR Mirror"
-        url: "http://repo.kubespray.miribit.lab:5002/v2/_catalog"
+        url: "http://{{ registry_host }}:5002/v2/_catalog"
       - name: "registry.k8s.io Mirror"
-        url: "http://repo.kubespray.miribit.lab:5003/v2/_catalog"
+        url: "http://{{ registry_host }}:5003/v2/_catalog"
 
   tasks:
     # =========================================================================
@@ -229,7 +232,7 @@
     # =========================================================================
     - name: "[4/5] Check core Kubernetes images in registry"
       uri:
-        url: "http://repo.kubespray.miribit.lab:5003/v2/kube-apiserver/tags/list"
+        url: "http://{{ registry_host }}:5003/v2/kube-apiserver/tags/list"
         method: GET
         timeout: 10
       register: apiserver_tags

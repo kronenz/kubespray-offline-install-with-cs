@@ -126,35 +126,44 @@ get_helm_url: "{{ files_repo }}/{{ kubespray_version }}/get.helm.sh"
 #   - mirrors: 미러 레지스트리 목록 (우선순위 순서대로)
 #   - capabilities: 허용할 작업 (pull: 이미지 다운로드, resolve: 이미지 해석)
 #   - skip_verify: TLS 인증서 검증 건너뛰기 (오프라인 환경에서 자체 서명 인증서 사용 시)
+
+# 레지스트리 미러 호스트 (환경에 맞게 변경)
+registry_host: "repo.kubespray.miribit.lab"
+
+# TLS 인증서 검증 건너뛰기 설정
+# - true: 자체 서명 인증서 또는 HTTP 사용 시 (테스트/외부 환경)
+# - false: 유효한 TLS 인증서 사용 시 (프로덕션/내부 환경)
+registry_skip_verify: true
+
 containerd_registries_mirrors:
 # Docker Hub (docker.io) 미러 설정
-# 예: docker pull nginx -> repo.kubespray.miribit.lab:5000에서 다운로드
+# 예: docker pull nginx -> {{ registry_host }}:5000에서 다운로드
 - prefix: docker.io
   mirrors:
-  - host: http://repo.kubespray.miribit.lab:5000
+  - host: "http://{{ registry_host }}:5000"
     capabilities: [ "pull", "resolve" ] # 이미지 다운로드 및 해석 허용
-    skip_verify: true # TLS 인증서 검증 건너뛰기
+    skip_verify: "{{ registry_skip_verify }}"
 
 # Quay.io 미러 설정
 # Red Hat, CoreOS 등에서 호스팅하는 이미지 레지스트리
 - prefix: quay.io
   mirrors:
-  - host: http://repo.kubespray.miribit.lab:5001
+  - host: "http://{{ registry_host }}:5001"
     capabilities: [ "pull", "resolve" ]
-    skip_verify: true
+    skip_verify: "{{ registry_skip_verify }}"
 
 # GitHub Container Registry (ghcr.io) 미러 설정
 # GitHub에서 호스팅하는 컨테이너 이미지 레지스트리
 - prefix: ghcr.io
   mirrors:
-  - host: http://repo.kubespray.miribit.lab:5002
+  - host: "http://{{ registry_host }}:5002"
     capabilities: [ "pull", "resolve" ]
-    skip_verify: true
+    skip_verify: "{{ registry_skip_verify }}"
 
 # Kubernetes 공식 레지스트리 (registry.k8s.io) 미러 설정
 # Kubernetes 공식 컨테이너 이미지 (kube-apiserver, kube-controller-manager 등)
 - prefix: registry.k8s.io
   mirrors:
-  - host: http://repo.kubespray.miribit.lab:5003
+  - host: "http://{{ registry_host }}:5003"
     capabilities: [ "pull", "resolve" ]
-    skip_verify: true
+    skip_verify: "{{ registry_skip_verify }}"
